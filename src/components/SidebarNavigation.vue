@@ -32,6 +32,12 @@
       >
         <span class="icon">📋</span> <span>Detalles</span>
       </button>
+      <button 
+        :class="['nav-btn', { active: recursoActivo === 'envios' }]" 
+        @click="seleccionarRecurso('envios')"
+      >
+        <span class="icon">📋</span> <span>Envios</span>
+      </button>
     </nav>
   </aside>
 </template>

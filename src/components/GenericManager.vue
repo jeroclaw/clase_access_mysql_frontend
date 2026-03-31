@@ -2,7 +2,7 @@
   <div class="manager-container">
     <div class="header">
       <h1 class="title">Gestión de <span class="capitalize">{{ recursoActive }}</span></h1>
-      <button class="btn btn-primary" @click="abrirModalCrear">
+      <button v-if="configRecurso.canAdd" class="btn btn-primary" @click="abrirModalCrear">
         + Nuevo {{ recursoActive }} 
       </button>
     </div>
@@ -15,21 +15,21 @@
       <table class="styled-table">
         <thead>
           <tr>
-            <th v-for="col in columnas" :key="col.key">{{ col.label }}</th>
-            <th class="actions-col">Acciones</th>
+            <th v-for="col in columnasLista" :key="col.key">{{ col.label }}</th>
+            <th class="actions-col" v-if="configRecurso.canEdit || configRecurso.canDelete">Acciones</th>
           </tr>
         </thead>
         <tbody>
           <tr v-if="datos.length === 0">
-            <td :colspan="columnas.length + 1" class="text-center">No hay registros disponibles.</td>
+            <td :colspan="columnasLista.length + (configRecurso.canEdit || configRecurso.canDelete ? 1 : 0)" class="text-center">No hay registros disponibles.</td>
           </tr>
           <tr v-for="item in datos" :key="item.id">
-            <td v-for="col in columnas" :key="col.key">
-              {{ obtenerValor(item, col.key) }}
+            <td v-for="col in columnasLista" :key="col.key">
+              {{ obtenerValor(item, col) }}
             </td>
-            <td class="actions-cell">
-              <button class="btn btn-sm btn-edit" @click="editar(item)">✎ Editar</button>
-              <button class="btn btn-sm btn-delete" @click="abrirModalEliminar(item.id)">🗑 Eliminar</button>
+            <td class="actions-cell" v-if="configRecurso.canEdit || configRecurso.canDelete">
+              <button v-if="configRecurso.canEdit" class="btn btn-sm btn-edit" @click="editar(item)">✎ Editar</button>
+              <button v-if="configRecurso.canDelete" class="btn btn-sm btn-delete" @click="abrirModalEliminar(item.id)">🗑 Eliminar</button>
             </td>
           </tr>
         </tbody>
@@ -43,27 +43,40 @@
         
         <form @submit.prevent="guardar">
           <div class="form-group" v-for="col in columnasFormulario" :key="col.key">
-            <label class="form-label">{{ col.label }}</label>
-            
-            <select v-if="col.type === 'select' && col.optionsResource"
-              v-model="formulario[col.formKey || col.key]"
-              class="form-control"
-              required
-            >
-              <option value="" disabled>Seleccione {{ col.label.toLowerCase() }}</option>
-              <option v-for="opt in opciones[col.optionsResource] || []" :key="opt[col.optionValue]" :value="opt[col.optionValue]">
-                {{ opt[col.optionLabel] }}
-              </option>
-            </select>
-            
-            <input v-else
-              v-model="formulario[col.formKey || col.key]" 
-              class="form-control" 
-              :type="col.type || 'text'"
-              :placeholder="'Ingrese ' + col.label.toLowerCase()"
-              :readonly="col.readonly"
-              required 
-            />
+            <template v-if="col.type === 'checkbox'">
+              <label class="form-check-label" style="display: flex; align-items: center; gap: 8px;">
+                <input 
+                  type="checkbox"
+                  v-model="formulario[col.formKey || col.key]"
+                  class="form-check-input"
+                  :disabled="col.readonly"
+                />
+                {{ col.label }}
+              </label>
+            </template>
+            <template v-else>
+              <label class="form-label">{{ col.label }}</label>
+              
+              <select v-if="col.type === 'select' && col.optionsResource"
+                v-model="formulario[col.formKey || col.key]"
+                class="form-control"
+                required
+              >
+                <option value="" disabled>Seleccione {{ col.label.toLowerCase() }}</option>
+                <option v-for="opt in opciones[col.optionsResource] || []" :key="opt[col.optionValue]" :value="opt[col.optionValue]">
+                  {{ opt[col.optionLabel] }}
+                </option>
+              </select>
+              
+              <input v-else
+                v-model="formulario[col.formKey || col.key]" 
+                class="form-control" 
+                :type="col.type || 'text'"
+                :placeholder="'Ingrese ' + col.label.toLowerCase()"
+                :readonly="col.readonly"
+                required 
+              />
+            </template>
           </div>
           
           <div class="modal-actions">
@@ -108,9 +121,25 @@ const formulario = ref({});
 const itemAEliminar = ref(null);
 const opciones = ref({});
 
+// Configuración de permisos por recurso
+const configRecurso = computed(() => {
+  const configuraciones = {
+    clientes: { canAdd: true, canEdit: true, canDelete: true },
+    productos: { canAdd: true, canEdit: true, canDelete: true },
+    ordenes: { canAdd: true, canEdit: true, canDelete: true },
+    'detalle-ordenes': { canAdd: false, canEdit: false, canDelete: false },
+    envios: { canAdd: false, canEdit: false, canDelete: false }
+  };
+  return configuraciones[props.recursoActive] || { canAdd: true, canEdit: true, canDelete: true };
+});
+
 // Filtramos el 'id' para no mostrarlo en el formulario de creación/edición
 const columnasFormulario = computed(() => {
-  return columnas.value.filter(col => col.key !== 'id');
+  return columnas.value.filter(col => col.key !== 'id' && col.showInForm !== false);
+});
+
+const columnasLista = computed(() => {
+  return columnas.value.filter(col => col.showInList !== false);
 });
 
 // Configuración de columnas por entidad [cite: 148, 149]
@@ -128,17 +157,29 @@ const actualizarColumnas = (recurso) => {
       { key: 'stock', label: 'Stock', type: 'number' }
     ],
     ordenes: [
-      { key: 'id', label: 'ID' },
-      { key: 'cliente.name', formKey: 'clientes_id', label: 'Cliente', type: 'select', optionsResource: 'clientes', optionValue: 'id', optionLabel: 'name' },
-      { key: 'total', label: 'Total', type: 'number' },
-      { key: 'estado', label: 'Estado' }
+      // Para listado
+      { key: 'id', label: 'ID', showInForm: false },
+      { key: 'cliente.name', label: 'Cliente', showInForm: false },
+      { key: 'total', label: 'Total', type: 'number', showInForm: false },
+      { key: 'envio', label: 'Envios', type: 'checkbox',  showInForm: false },
+      // Para formulario
+      { key: 'clientes_id', label: 'Cliente', type: 'select', optionsResource: 'clientes', optionValue: 'id', optionLabel: 'name', showInList: false },
+      { key: 'producto_id', label: 'Producto', type: 'select', optionsResource: 'productos', optionValue: 'id', optionLabel: 'nombre', showInList: false },
+      { key: 'cantidad', label: 'Cantidad', type: 'number', default: 1, showInList: false },
+      { key: 'envio', label: 'Envío', type: 'checkbox', default: false, showInList: false }
     ],
     'detalle-ordenes': [
       { key: 'id', label: 'ID' },
-      { key: 'ordene_id', label: 'Orden N°', type: 'select', optionsResource: 'ordenes', optionValue: 'id', optionLabel: 'id' },
-      { key: 'producto.nombre', formKey: 'producto_id', label: 'Producto', type: 'select', optionsResource: 'productos', optionValue: 'id', optionLabel: 'nombre' },
-      { key: 'cantidad', label: 'Cantidad', type: 'number', default: 1 },
-      { key: 'precio_unitario', label: 'Precio Calculado', type: 'number'}
+      { key: 'ordene_id', label: 'Orden N°' },
+      { key: 'producto.nombre', label: 'Producto' },
+      { key: 'cantidad', label: 'Cantidad', type: 'number' },
+      { key: 'precio_unitario', label: 'Precio Calculado', type: 'number' }
+    ],
+    envios: [
+      { key: 'id', label: 'ID' },
+      { key: 'cliente.name', label: 'Cliente', showInForm: false },
+      { key: 'ordene_id', label: 'Orden N°' },
+      { key: 'fecha_envio', label: 'Fecha de Envío', type: 'date' }
     ]
   };
   columnas.value = configs[recurso] || [];
@@ -148,8 +189,19 @@ const actualizarColumnas = (recurso) => {
 const baseURL = 'http://localhost:8081/api';
 
 // Función para resolver rutas anidadas (ej: "cliente.name")
-const obtenerValor = (objeto, path) => {
-  return path.split('.').reduce((acc, prop) => (acc && acc[prop] !== undefined) ? acc[prop] : '', objeto);
+const obtenerValor = (objeto, col) => {
+  const path = typeof col === 'string' ? col : col.key;
+  let valor = path.split('.').reduce((acc, prop) => (acc && acc[prop] !== undefined) ? acc[prop] : '', objeto);
+  
+  // Si la columna es de tipo fecha, formateamos a dd/mm/aaaa
+  if (col && col.type === 'date' && valor) {
+    const match = String(valor).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (match) {
+      return `${match[3]}/${match[2]}/${match[1]}`;
+    }
+  }
+
+  return valor;
 };
 
 const fetchData = async () => {
@@ -178,16 +230,41 @@ const cargarOpciones = async (recurso) => {
 const abrirModalCrear = () => {
   formulario.value = {};
   columnasFormulario.value.forEach(col => {
-    formulario.value[col.formKey || col.key] = col.default !== undefined ? col.default : ''; // Aplica el valor por defecto si existe, o lo deja vacío
+    let def = col.default !== undefined ? col.default : '';
+    if (col.type === 'checkbox' && col.default === undefined) def = false;
+    formulario.value[col.formKey || col.key] = def; // Aplica el valor por defecto si existe, o lo deja vacío
   });
   modoEdicion.value = false;
   mostrarModalForm.value = true;
 };
 
-const editar = (item) => {
-  formulario.value = { ...item }; // Clonamos el objeto para no mutar la tabla en vivo
+const editar = async (item) => {
   modoEdicion.value = true;
   mostrarModalForm.value = true;
+
+  let formData = { ...item };
+
+  if (props.recursoActive === 'ordenes') {
+    // Mapear el ID del cliente desde el objeto anidado
+    if (item.cliente) {
+      formData.cliente_id = item.cliente.id;
+    }
+
+    // Para editar, necesitamos producto y cantidad, que no están en la lista principal.
+    // Los buscamos en los detalles de la orden. Usamos 'ordene_id' por consistencia.
+    try {
+      const detallesResponse = await axios.get(`${baseURL}/detalle-ordenes`, { params: { ordene_id: item.id } });
+      if (detallesResponse.data && detallesResponse.data.length > 0) {
+        const primerDetalle = detallesResponse.data[0];
+        formData.producto_id = primerDetalle.producto_id;
+        formData.cantidad = primerDetalle.cantidad;
+      }
+    } catch (error) {
+      console.error(`Error al buscar detalles para la orden ${item.id}:`, error);
+    }
+  }
+  
+  formulario.value = formData;
 };
 
 const cerrarModalForm = () => {
@@ -231,21 +308,6 @@ const confirmarEliminar = async () => {
     }
   }
 };
-
-// Auto-calcular precio total en detalle-ordenes
-watch([() => formulario.value.producto_id, () => formulario.value.cantidad], ([nuevoProductoId, nuevaCantidad]) => {
-  if (props.recursoActive === 'detalle-ordenes' && nuevoProductoId) {
-    const productos = opciones.value['productos'] || [];
-    // Usamos == en lugar de === por si el select nos da un String y la API un Integer
-    const productoSeleccionado = productos.find(p => p.id == nuevoProductoId);
-    
-    if (productoSeleccionado) {
-      const precio = parseFloat(productoSeleccionado.precio) || 0;
-      const cantidad = parseFloat(nuevaCantidad) || 1; // Toma la cantidad, o 1 por defecto
-      formulario.value.precio_unitario = (precio * cantidad).toFixed(2); // Asigna el valor bloqueado
-    }
-  }
-});
 
 // El Watch detecta el cambio de recurso y dispara la actualización [cite: 130, 134]
 watch(() => props.recursoActive, (nuevo) => {
