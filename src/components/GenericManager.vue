@@ -1,9 +1,9 @@
 <template>
   <div class="manager-container">
     <div class="header">
-      <h1 class="title">Gestión de <span class="capitalize">{{ recursoActive }}</span></h1>
+      <h1 class="title">Gestión de <span class="capitalize">{{ nombresRecurso.plural }}</span></h1>
       <button v-if="configRecurso.canAdd" class="btn btn-primary" @click="abrirModalCrear">
-        + Nuevo {{ recursoActive }} 
+        + Nuevo {{ nombresRecurso.singular }} 
       </button>
     </div>
 
@@ -39,7 +39,7 @@
     <!-- Modal Crear / Editar -->
     <div v-if="mostrarModalForm" class="modal-overlay" @click.self="cerrarModalForm">
       <div class="modal-content">
-        <h2 class="modal-title">{{ modoEdicion ? 'Editar' : 'Nuevo' }} {{ recursoActive }}</h2>
+        <h2 class="modal-title">{{ modoEdicion ? 'Editar' : 'Nuevo' }} {{ nombresRecurso.singular }}</h2>
         
         <form @submit.prevent="guardar">
           <div class="form-group" v-for="col in columnasFormulario" :key="col.key">
@@ -123,14 +123,41 @@ const opciones = ref({});
 
 // Configuración de permisos por recurso
 const configRecurso = computed(() => {
-  const configuraciones = {
-    clientes: { canAdd: true, canEdit: true, canDelete: true },
-    productos: { canAdd: true, canEdit: true, canDelete: true },
-    ordenes: { canAdd: true, canEdit: true, canDelete: true },
-    'detalle-ordenes': { canAdd: false, canEdit: false, canDelete: false },
-    envios: { canAdd: false, canEdit: false, canDelete: false }
+  try {
+    const permisos = JSON.parse(localStorage.getItem('permisos') || '[]');
+    const roles = JSON.parse(localStorage.getItem('roles') || '[]');
+    const isAdmin = roles.includes('Admin') || roles.includes('Administrador');
+    
+    const mapaNombres = {
+      users: 'usuarios',
+      permissions: 'permisos',
+      'detalle-ordenes': 'detalle_ordenes'
+    };
+    const recurso = mapaNombres[props.recursoActive] || props.recursoActive;
+    
+    return {
+      canAdd: isAdmin || permisos.includes(`crear_${recurso}`),
+      canEdit: isAdmin || permisos.includes(`editar_${recurso}`),
+      canDelete: isAdmin || permisos.includes(`eliminar_${recurso}`)
+    };
+  } catch {
+    return { canAdd: false, canEdit: false, canDelete: false };
+  }
+});
+
+// Mapeo de nombres para mostrar en la interfaz (plural y singular)
+const nombresRecurso = computed(() => {
+  const mapa = {
+    clientes: { plural: 'Clientes', singular: 'Cliente' },
+    productos: { plural: 'Productos', singular: 'Producto' },
+    ordenes: { plural: 'Órdenes', singular: 'Orden' },
+    'detalle-ordenes': { plural: 'Detalles de Órdenes', singular: 'Detalle de Orden' },
+    envios: { plural: 'Envíos', singular: 'Envío' },
+    users: { plural: 'Usuarios', singular: 'Usuario' },
+    roles: { plural: 'Roles', singular: 'Rol' },
+    permissions: { plural: 'Permisos', singular: 'Permiso' }
   };
-  return configuraciones[props.recursoActive] || { canAdd: true, canEdit: true, canDelete: true };
+  return mapa[props.recursoActive] || { plural: props.recursoActive, singular: props.recursoActive };
 });
 
 // Filtramos el 'id' para no mostrarlo en el formulario de creación/edición
@@ -180,6 +207,20 @@ const actualizarColumnas = (recurso) => {
       { key: 'cliente.name', label: 'Cliente', showInForm: false },
       { key: 'ordene_id', label: 'Orden N°' },
       { key: 'fecha_envio', label: 'Fecha de Envío', type: 'date' }
+    ],
+    users: [
+      { key: 'id', label: 'ID' },
+      { key: 'name', label: 'Nombre' },
+      { key: 'email', label: 'Email', type: 'email' },
+      { key: 'password', label: 'Contraseña', type: 'password', showInList: false }
+    ],
+    roles: [
+      { key: 'id', label: 'ID' },
+      { key: 'name', label: 'Nombre de Rol' }
+    ],
+    permissions: [
+      { key: 'id', label: 'ID' },
+      { key: 'name', label: 'Nombre de Permiso' }
     ]
   };
   columnas.value = configs[recurso] || [];
